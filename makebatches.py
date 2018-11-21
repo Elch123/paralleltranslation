@@ -4,9 +4,6 @@ import pickle
 import makeendeprocessors
 from makeendeprocessors import decode
 from makeendeprocessors import decodearray
-import mxnet as mx
-from mxnet import gluon, autograd, nd
-from mxnet.gluon import nn,Block
 (enprocessor,deprocessor)=makeendeprocessors.load()
 
 def maxlen(langa,langb):
