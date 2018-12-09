@@ -7,8 +7,12 @@ from makeendeprocessors import decodearray
 import torch
 from torchmodel import Cnn,ResNet,AttnResNet
 from makebatches import Batch_maker
-import atexit
 import json
+from tensorboardX import SummaryWriter
+
+randcount=np.random.randint(0,1000000)
+print(randcount)
+writer = SummaryWriter('/tmp/torchalignedloss'+str(randcount))
 (enprocessor,deprocessor)=makeendeprocessors.load()
 #hyperparameters
 params={
@@ -33,10 +37,6 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 traindata=Batch_maker("traindeen.pickle")
 validdata=Batch_maker("traindeen.pickle")
-def on_exit():
-    with open("validhistory",'w') as f:
-        json.dump(validlosses,f)
-atexit.register(on_exit)
 def alignment_score(label,tensor):
     if(label==0):
         return -tensor[label]*indel_penalty #don't reward extra blank labels more than the indel indel_penalty, to cancel that out
@@ -103,20 +103,19 @@ print(a)
 print(exiting)"""
 net=AttnResNet(params)
 net.to(device)
-mask=torch.ones((4000,))
+mask=torch.ones((params['symbols'],))
 mask[0]=blank_weight
 ce_loss_fn = torch.nn.CrossEntropyLoss(reduction='mean',weight=mask.to(device))#
 mse_loss_fn = torch.nn.MSELoss(reduction='mean')
 l_loss_fn = torch.nn.MSELoss(reduction='mean') #L1Loss
 softmax=torch.nn.Softmax(dim=2)
 optimizer = torch.optim.SGD(net.parameters(), lr=3e-2, momentum=0.9,nesterov=True,weight_decay=1e-5)
-smoothed_loss="null"
 def maketorchbatch(gen):
     batch=gen.makebatch(params['symbols_in_batch'])
     return torch.from_numpy(batch).long()
 def tonumpy(tensor):
     return tensor.detach().cpu().numpy()
-def printvalid():
+def printvalid(count):
     batch=maketorchbatch(validdata).to(device)
     data=batch[1]
     labels=batch[0]
@@ -132,7 +131,7 @@ def printvalid():
     print("\n")
     print(decodearray(enprocessor,labels.detach().cpu().numpy()))
     print("validation loss "+str(loss.item())+"\n")
-    validlosses.append(loss.item())
+    writer.add_scalar('Valid/Loss', loss.item(), count)
 for e in range(params['epochs']):
     #This loss function produces the one already done if it is the best, or else the closest improvement
     count=0
@@ -169,16 +168,11 @@ for e in range(params['epochs']):
         celoss=ce_loss_fn(output,alignedlabels)
         print("ce loss "+str(celoss.item())+"\n")
         loss=lloss+celoss
+        writer.add_scalar('Train/Loss', loss.item(), count)
         if(count%10==0 ):
-            printvalid()
+            printvalid(count)
         net.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm(net.parameters(), 1)
         optimizer.step()
         count+=1
-        if(smoothed_loss=="null"):
-            smoothed_loss=loss.item()
-        else:
-            smoothed_loss=smoothed_loss*smoothing+(1-smoothing)*loss.item()
-        #print(nd.mean(loss).asscalar())
-        #print(smoothed_loss)
