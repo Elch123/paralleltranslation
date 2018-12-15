@@ -3,4 +3,6 @@
 *.de
 *.ru
 *.pickle
-
+*.pt
+*.tar
+*.gz

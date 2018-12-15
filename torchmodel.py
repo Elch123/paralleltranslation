@@ -5,9 +5,9 @@ class StandardBlock(nn.Module):
     def __init__(self,params):
         self.params=params
         super().__init__()
-        self.conv1=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 3,padding=1)
+        self.conv1=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2)
         self.bn1=torch.nn.BatchNorm1d(params['num_hidden'])
-        self.conv2=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 3,padding=1)
+        self.conv2=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2)
         self.bn2=torch.nn.BatchNorm1d(params['num_hidden'])
         self.relu=torch.nn.ReLU()
 
@@ -25,9 +25,9 @@ class ResidualBlock(nn.Module):
     def __init__(self,params):
         self.params=params
         super().__init__()
-        self.conv1=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 3,padding=1)
+        self.conv1=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2)
         self.bn1=torch.nn.BatchNorm1d(params['num_hidden'])
-        self.conv2=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 3,padding=1)
+        self.conv2=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2)
         self.bn2=torch.nn.BatchNorm1d(params['num_hidden'])
         self.relu=torch.nn.ReLU()
 
@@ -46,13 +46,13 @@ class ResidualBlock(nn.Module):
 class Cnn(nn.Module):
     def __init__(self,params):
         super().__init__()
-        self.embed=torch.nn.Embedding(4000,params['num_hidden'])
+        self.embed=torch.nn.Embedding(params['symbols'],params['num_hidden'])
         self.model = torch.nn.Sequential(
         torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 5,padding=2),
         torch.nn.ReLU(),
         torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 5,padding=2),
         torch.nn.ReLU(),
-        torch.nn.Conv1d(params['num_hidden'],4000, 5,padding=2))
+        torch.nn.Conv1d(params['num_hidden'],params['symbols'], 5,padding=2))
     def forward(self,x):
         #print(x.shape)
         embedded=self.embed(x)
@@ -66,7 +66,7 @@ class Cnn(nn.Module):
 class Embedder(nn.Module):
     def __init__(self,params):
         super().__init__()
-        self.embed=torch.nn.Embedding(4000,params['embed_size'])
+        self.embed=torch.nn.Embedding(params['symbols'],params['embed_size'])
     def forward(self,x):
         embedded=self.embed(x)
         embedded=embedded.permute(0,2,1)
@@ -116,19 +116,19 @@ class AttnResBlock(nn.Module):
 class ResNet(nn.Module):
     def __init__(self,params):
         super().__init__()
-        self.embed=torch.nn.Embedding(4000,params['num_hidden'])
+        self.embed=torch.nn.Embedding(params['symbols'],params['num_hidden'])
         upsample=[]
         if(params['upsample']):
             upsample.append(torch.nn.ConvTranspose1d(params['num_hidden'],params['num_hidden'],2,stride=2))
             #upsample.append(torch.nn.Upsample(scale_factor=2, mode='nearest'))
-        layers=[torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 3,padding=1),
+        layers=[torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2),
         ResidualBlock(params),
         ResidualBlock(params),
         ResidualBlock(params)]+upsample+[ResidualBlock(params),
         ResidualBlock(params),
         ResidualBlock(params),
         torch.nn.ReLU(),
-        torch.nn.Conv1d(params['num_hidden'],4000, 5,padding=2)]
+        torch.nn.Conv1d(params['num_hidden'],params['symbols'], params['filter_width'],padding=params['filter_width']//2)]
         self.model = torch.nn.Sequential(*layers)
     def forward(self,x):
         embedded=self.embed(x)
@@ -139,18 +139,18 @@ class ResNet(nn.Module):
 class AttnResNet(nn.Module):
     def __init__(self,params):
         super().__init__()
-        self.embed=torch.nn.Embedding(4000,params['num_hidden'])
+        self.embed=torch.nn.Embedding(params['symbols'],params['num_hidden'])
         upsample=[]
         if(params['upsample']):
             upsample.append(torch.nn.Upsample(scale_factor=2, mode='nearest'))
-        layers=[torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 3,padding=1),
+        layers=[torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2),
         AttnResBlock(params),
         AttnResBlock(params),
         AttnResBlock(params)]+upsample+[AttnResBlock(params),
         AttnResBlock(params),
         AttnResBlock(params),
         torch.nn.ReLU(),
-        torch.nn.Conv1d(params['num_hidden'],4000, 5,padding=2)]
+        torch.nn.Conv1d(params['num_hidden'],params['symbols'], params['filter_width'],padding=params['filter_width']//2)]
         self.model = torch.nn.Sequential(*layers)
     def forward(self,x):
         embedded=self.embed(x)

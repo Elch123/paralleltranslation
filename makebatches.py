@@ -24,14 +24,17 @@ class Batch_maker():
     def makebatch(self,maxsymbols):
         numstrings=len(self.text[0])
         topi=np.random.randint(numstrings)
-        strlen=max(maxlen(self.text[0][topi],self.text[1][topi]),4)
+        #strlen=max(maxlen(self.text[0][topi],self.text[1][topi]),4)
+        strlen=int(len(self.text[0][topi])*1.3+4)
         numback=max(maxsymbols//strlen,1)
         numback=numback+min(0,topi-numback)#clip number of elements going back if it is less than zero, to not overrun start of array.
         fronti=topi-numback
         batch=np.zeros(shape=(2,numback,strlen),dtype=np.int32)
         for i in range(numback):
             seta=self.text[0][fronti+i]
-            batch[0][i][0:len(seta)]=seta
+            maxtopa=min(len(seta),strlen)
+            batch[0][i][0:maxtopa]=seta[0:maxtopa]
             setb=self.text[1][fronti+i]
-            batch[1][i][0:len(setb)]=setb
+            maxtopb=min(len(setb),strlen)
+            batch[1][i][0:maxtopb]=setb[0:maxtopb]
         return batch

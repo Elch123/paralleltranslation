@@ -9,43 +9,77 @@ from torchmodel import Cnn,ResNet,AttnResNet
 from makebatches import Batch_maker
 import json
 from tensorboardX import SummaryWriter
-
-randcount=np.random.randint(0,1000000)
-print(randcount)
-writer = SummaryWriter('/tmp/torchalignedloss'+str(randcount))
+from hparams import params
+import argparse
+import os
 (enprocessor,deprocessor)=makeendeprocessors.load()
 #hyperparameters
-params={
-'symbols_in_batch':1000,
-'num_hidden':600,
-'attnsize':200,
-'epochs':100,
-'max_seqlen':1000,
-'embed_size':200,
-'symbols':4000,
-'net_verbose':False,
-'batchnorm':False, #True causes training failure, gradient clipping might fix this
-'upsample':False
-}
-indel_penalty=-.01
+indel_penalty=-.010
 smoothing=.5
 blank_weight=0
 scoreavg=0
-mse_scale=1e-3
+mse_scale=.5
+max_clamp=4.0
 validlosses=[]
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 traindata=Batch_maker("traindeen.pickle")
 validdata=Batch_maker("traindeen.pickle")
+parser = argparse.ArgumentParser(description='Save file location')
+parser.add_argument('savename',help="the name of the savefile, which will be stored in /tmp",default=None)
+args=parser.parse_args()
+print(args.savename)
+writer = SummaryWriter('/tmp/torchalignedloss_'+args.savename)
+def filepath(name):
+    return "/tmp/"+name
+def save(model,optimizer,count,filename):
+    torch.save({'count':count,'model_state_dict': model.state_dict(),'optimizer_state_dict': optimizer.state_dict()},filename)
 def alignment_score(label,tensor):
     if(label==0):
         return -tensor[label]*indel_penalty #don't reward extra blank labels more than the indel indel_penalty, to cancel that out
         #This will prevent the creation of many blamks
     return tensor[label]
-def align(output,label): # This uses the Needleman Wunsch optimal alignment algrithm to align the outputs of the model with the labels
+def nearest_insert_direction(index,inserts):
+    #0 for left, 1 for right
+    left=index
+    right=index
+    while(True):
+        if(left>0):
+            left-=1
+            if(inserts[left]==1):
+                return 0
+        else:
+            return 1
+        if(right<len(inserts-1)):
+            right+=1
+            if(inserts[right]==1):
+                return 1
+        else:
+            return 0
+def reassign(label,inserts,deletes):
+    #reassign multilabel deletions
+    for i in range(1,len(label)):
+        j=i
+        while(deletes[j]==1):
+            j+=1
+        if(i-j>=2):
+            for k in range(i,j):
+                deletes[k]=0#Eliminate longer streches of deletion so they won't affect the single align stage
+            label[j-1]=label[i-1]
+            label[i]=label[j] #swap opposite label to allow the model to learn to build up n-grams. This might work, or be really bad
+    #reassign single label deletions
+    for i in range(len(label)):
+        if(deletes[i]==1):
+            direction=nearest_insert_direction(i,inserts)
+            if(direction==0):
+                label[i]=label[i-1]
+            if(direction==1):
+                label[i]=label[i+1]
+    return label
+
+def align(output,label,reassign_blank=False): # This uses the Needleman Wunsch optimal alignment algrithm to align the outputs of the model with the labels
     l_label=len(label)+1
     l_output=len(output)+1
-    labelcopy=np.zeros(shape=(len(output)))
     tracelabel=label
     array=np.zeros(shape=(l_label,l_output)) # One larger than actual sequence to handle the edge cases of all inserition/all deletion.
     trace=np.zeros(shape=(l_label,l_output),dtype=np.int32) #Record path the algorithm is taking
@@ -62,7 +96,6 @@ def align(output,label): # This uses the Needleman Wunsch optimal alignment algr
             dellabel=array[i,j-1]+indel_penalty
             usebonus=output[j-1,tracelabel[i-1]]
             #This is somewhat hackish, but the labels and output are offset by one in this array,
-            #print(uselabel)
             #so I use output[j-1] and label[i-1] to get the correct indicies for the output and label sequence to fill the whole array.
             uselabel=array[i-1,j-1]+usebonus
             s=(uselabel,inslabel,dellabel)
@@ -72,6 +105,9 @@ def align(output,label): # This uses the Needleman Wunsch optimal alignment algr
     k=l_label-1
     m=l_output-1
     path=[]
+    labelcopy=np.zeros(shape=(len(output)))
+    inserts=np.zeros(shape=(len(output)))
+    deletes=np.zeros(shape=(len(output)))
     while(k>=0 and m>=0):
         #print(k,m)
         path.append((k,m))
@@ -80,36 +116,24 @@ def align(output,label): # This uses the Needleman Wunsch optimal alignment algr
             m-=1
             labelcopy[m]=label[k] #Use elif statements to only trigger one of the cases, not multiple ones before the path is updated.
         elif(trace[k,m]==1): #Insert label
+            inserts[m]=1
             k-=1
         elif(trace[k,m]==2): #Delete label
+            deletes[m]=1
             m-=1
+    if(reassign_blank):
+        labelcopy=reassign(labelcopy,inserts,deletes)
     path=path[::-1]
     return labelcopy
-def alignbatch(outputs,labels): # Run alignment algorithm on each tensor in the batch
+def alignbatch(outputs,labels,reassign_blank=False): # Run alignment algorithm on each tensor in the batch
     upsamplemult=1
     if(params['upsample']):
         upsamplemult=2
     aligned=np.zeros(shape=(labels.shape[0],labels.shape[1]*upsamplemult))
     for i in range(len(aligned)):
-        aligned[i]=align(outputs[i],labels[i])
+        aligned[i]=align(outputs[i],labels[i],reassign_blank)
     return aligned
     pass
-"""genea=np.array([[0,0,0,1,0,0,0],[0,0,0,0,1,0,0],[0,1,0,0,0,0,0],[0,0,1,0,0,0,0],[0,0,0,1,0,0,0],[0,0,0,0,1,0,0],[0,0,0,0,0,1,0],[0,0,0,0,0,1,0]])
-geneb=np.array([3,1,2,2,1,4,1])
-print(genea)
-print(geneb)
-a=align(genea,geneb)
-print(a)
-print(exiting)"""
-net=AttnResNet(params)
-net.to(device)
-mask=torch.ones((params['symbols'],))
-mask[0]=blank_weight
-ce_loss_fn = torch.nn.CrossEntropyLoss(reduction='mean',weight=mask.to(device))#
-mse_loss_fn = torch.nn.MSELoss(reduction='mean')
-l_loss_fn = torch.nn.MSELoss(reduction='mean') #L1Loss
-softmax=torch.nn.Softmax(dim=2)
-optimizer = torch.optim.SGD(net.parameters(), lr=3e-2, momentum=0.9,nesterov=True,weight_decay=1e-5)
 def maketorchbatch(gen):
     batch=gen.makebatch(params['symbols_in_batch'])
     return torch.from_numpy(batch).long()
@@ -132,45 +156,71 @@ def printvalid(count):
     print(decodearray(enprocessor,labels.detach().cpu().numpy()))
     print("validation loss "+str(loss.item())+"\n")
     writer.add_scalar('Valid/Loss', loss.item(), count)
+"""genea=np.array([[0,0,0,1,0,0,0],[0,0,0,0,1,0,0],[0,1,0,0,0,0,0],[0,0,1,0,0,0,0],[0,0,0,1,0,0,0],[0,0,0,0,1,0,0],[0,0,0,0,0,1,0],[0,0,0,0,0,1,0]])
+geneb=np.array([3,1,2,2,1,4,1])
+print(genea)
+print(geneb)
+a=align(genea,geneb)
+print(a)
+print(exiting)"""
+count=0
+net=AttnResNet(params)
+net.to(device)
+optimizer = torch.optim.SGD(net.parameters(), lr=3e-2, momentum=0.9,nesterov=True,weight_decay=params['weight_decay'])
+mask=torch.ones((params['symbols'],))
+mask[0]=blank_weight
+ce_loss_fn = torch.nn.CrossEntropyLoss(reduction='mean',weight=mask.to(device))#
+l_loss_fn = torch.nn.MSELoss(reduction='mean') #L1Loss
+softmax=torch.nn.Softmax(dim=2)
+loadpath=filepath(args.savename)
+if(os.path.isfile(loadpath)):
+    checkpoint=torch.load(loadpath)
+    net.load_state_dict(checkpoint['model_state_dict'])
+    net.train()
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    count=checkpoint['count']
 for e in range(params['epochs']):
     #This loss function produces the one already done if it is the best, or else the closest improvement
-    count=0
+
     while(True):
+        print(count)
         batch=maketorchbatch(traindata).to(device)
         data=batch[1]
         print(data.shape)
         labels=batch[0]
         output=net(data)
-
         cpuoutput=tonumpy(softmax(output.permute(0,2,1)))#convert the tensor to have the channel dimantion last for the alignment stage
-
         #Take the softmax to constarin output between 0 and 1
         cpulabels=tonumpy(labels)
         alignedlabels=alignbatch(cpuoutput,cpulabels)
         alignedlabels=torch.from_numpy(alignedlabels).long().to(device) #reconvert it to a torch tensor
+        #This conditional loss to constrin the number of generaed tokens is annoyingly complicated, but works. Perhaps find a simpler way?
         labelcount=torch.sum(torch.sign(labels),dim=1) #number of non zero output in label
         outcount=torch.sum(torch.sign(torch.argmax(output,dim=1)),dim=1) #number of non zero output in tensor
         diffcount=outcount-labelcount
-        #print(labelcount)
-        cpulabelcount=tonumpy(labelcount)
         batchsize=len(labelcount)
-        #print(outcount)
-        outmask=torch.sign(torch.argmax(output,dim=1))
+        outmask=torch.sign(torch.argmax(output,dim=1)) # dont apply loss to non present tokens
         nonzerooutput=torch.sum(output.softmax(dim=-2)[:,1:,:],dim=1)*outmask.float()
         outputnonzero=torch.sum(nonzerooutput,dim=1)
-        diffcount=diffcount.reshape(batchsize).float()/(labelcount+2).float()
-        #print(direction)
+        diffcount=diffcount.reshape(batchsize).float()/(labelcount+3).float()
+        diffcount=torch.clamp(diffcount,-100.0,max_clamp)#limit how strongly this loss constrains the output token number.
         l_targets=outputnonzero-diffcount
         l_targets=l_targets.detach()
-        #lloss=l_loss_fn(outputnonzero,labelcount.float()*5-4*outcount.float())*.01
-        lloss=l_loss_fn(outputnonzero,l_targets)*.01
+        lloss=l_loss_fn(outputnonzero,l_targets)*mse_scale
+        #End conditional loss. Probably sould put in it's own function
         print("reg loss "+str(lloss.item()))
-        celoss=ce_loss_fn(output,alignedlabels)
+        celoss=""
+        if(count<0):#Train some without aligning label at the start of training to help the model converge better. Deons't really work
+            celoss=ce_loss_fn(output,labels)
+        else:
+            celoss=ce_loss_fn(output,alignedlabels)
         print("ce loss "+str(celoss.item())+"\n")
         loss=lloss+celoss
         writer.add_scalar('Train/Loss', loss.item(), count)
         if(count%10==0 ):
             printvalid(count)
+        if(count%500==0):
+            save(net,optimizer,count,loadpath)
         net.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm(net.parameters(), 1)
