@@ -43,6 +43,32 @@ class ResidualBlock(nn.Module):
         x=self.conv2(x)
         x+=residual
         return x
+class InceptionBlock(nn.Module):
+    def __init__(self,params):
+        self.params=params
+        super().__init__()
+        self.reducea=torch.nn.Conv1d(params['num_hidden'],params['num_hidden']//4, 1)
+        self.reduceb=torch.nn.Conv1d(params['num_hidden'],params['num_hidden']//4, 1)
+        self.reducec=torch.nn.Conv1d(params['num_hidden'],params['num_hidden']//4, 1)
+        self.conva=torch.nn.Conv1d(params['num_hidden']//4,params['num_hidden']//4, 3,padding=1)
+        self.convb=torch.nn.Conv1d(params['num_hidden']//4,params['num_hidden']//4, 3,padding=1)
+        self.convc=torch.nn.Conv1d(params['num_hidden']//4,params['num_hidden']//4, 3,padding=1)
+        self.project=torch.nn.Conv1d(params['num_hidden']//4*3,params['num_hidden'], 1)
+        self.activation=torch.nn.ReLU()
+
+    def forward(self,x):
+        residual=x
+        x=self.activation(x)
+        thina=self.activation(self.reducea(x))
+        thinb=self.activation(self.reduceb(x))
+        thinc=self.activation(self.reducec(x))
+        proca=self.activation(self.conva(thinb))
+        procb=self.activation(self.convb(thinc))
+        procb=self.activation(self.convc(procb))
+        combined=torch.cat([thina,proca,procb],dim=1)
+        out=self.project(combined)
+        out+=residual
+        return out
 class Cnn(nn.Module):
     def __init__(self,params):
         super().__init__()
@@ -100,6 +126,34 @@ class BasicAttention(nn.Module):
         out=torch.matmul(x,attn)
         out=self.project(out)
         return out
+class MultiHeadAttention(nn.Module):
+    def __init__(self,params):
+        super().__init__()
+        self.hparams=params
+        self.keyconv=torch.nn.Conv1d(params['num_hidden'],params['attnsize'], 1)
+        self.queriesconv=torch.nn.Conv1d(params['num_hidden'],params['attnsize'], 1)
+        self.softmax=torch.nn.Softmax(dim=-1)
+        self.projecta=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 1)
+    def split(self,x,shape):
+        x=torch.reshape(x,(shape[0]*self.hparams['heads'],-1,shape[2]))
+        return x
+    def join(self,x,shape):
+        x=torch.reshape(x,(shape[0],-1,shape[2]))
+        return x
+    def forward(self,x):
+        shape=x.shape
+        keys=self.keyconv(x)
+        keys=self.split(keys,shape)
+        queries=self.queriesconv(x)
+        queries=self.split(queries,shape)
+        values=torch.matmul(keys.permute(0,2,1),queries)
+        seqlen=shape[2]
+        attn=self.softmax(values/(seqlen**1/2))
+        x=self.split(x,shape)
+        out=torch.matmul(x,attn)
+        out=self.join(out,shape)
+        out=self.projecta(out)
+        return out
 class AttnResBlock(nn.Module):
     def __init__(self,params):
         super().__init__()
@@ -112,7 +166,17 @@ class AttnResBlock(nn.Module):
         x=self.block(x)
         return x
 
-
+class AdvancedBlock(nn.Module):
+    def __init__(self,params):
+        super().__init__()
+        self.attn=MultiHeadAttention(params)
+        self.block=ResidualBlock(params)
+    def forward(self,x):
+        res=x
+        x=self.attn(x)
+        x+=res
+        x=self.block(x)
+        return x
 class ResNet(nn.Module):
     def __init__(self,params):
         super().__init__()
@@ -149,6 +213,28 @@ class AttnResNet(nn.Module):
         AttnResBlock(params)]+upsample+[AttnResBlock(params),
         AttnResBlock(params),
         AttnResBlock(params),
+        torch.nn.ReLU(),
+        torch.nn.Conv1d(params['num_hidden'],params['symbols'], params['filter_width'],padding=params['filter_width']//2)]
+        self.model = torch.nn.Sequential(*layers)
+    def forward(self,x):
+        embedded=self.embed(x)
+        embedded=embedded.permute(0,2,1)
+        out=self.model(embedded)
+        return out
+
+class AdvancedNet(nn.Module):
+    def __init__(self,params):
+        super().__init__()
+        self.embed=torch.nn.Embedding(params['symbols'],params['num_hidden'])
+        upsample=[]
+        layers=[
+        torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
         torch.nn.ReLU(),
         torch.nn.Conv1d(params['num_hidden'],params['symbols'], params['filter_width'],padding=params['filter_width']//2)]
         self.model = torch.nn.Sequential(*layers)
