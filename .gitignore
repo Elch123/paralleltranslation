@@ -6,3 +6,4 @@
 *.pt
 *.tar
 *.gz
+*events.out.tfevents*
