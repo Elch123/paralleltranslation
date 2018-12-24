@@ -20,6 +20,7 @@ blank_weight=0
 scoreavg=0
 mse_scale=0.5
 max_clamp=4.0
+lr=1e-2
 validlosses=[]
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -138,6 +139,7 @@ def alignbatch(outputs,labels,reassign_blank=False): # Run alignment algorithm o
         totalscore+=a[1]
         aligned[i]=a[0]
     totalscore/=len(aligned)
+    totalscore/=len(aligned[0])
     return (aligned,totalscore)
     pass
 def maketorchbatch(gen):
@@ -174,7 +176,7 @@ print(exiting)"""
 count=0
 net=AdvancedNet(params)#AttnResNet
 net.to(device)
-optimizer = torch.optim.SGD(net.parameters(), lr=3e-2, momentum=0.9,nesterov=True,weight_decay=params['weight_decay'])
+optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9,nesterov=True,weight_decay=params['weight_decay'])
 mask=torch.ones((params['symbols'],))
 mask[0]=blank_weight
 ce_loss_fn = torch.nn.CrossEntropyLoss(reduction='mean',weight=mask.to(device))#
@@ -203,7 +205,7 @@ for e in range(params['epochs']):
         cpuoutput=tonumpy(softmax(output.permute(0,2,1)))#convert the tensor to have the channel dimantion last for the alignment stage
         #Take the softmax to constarin output between 0 and 1
         cpulabels=tonumpy(labels)
-        alignedlabels=alignbatch(cpuoutput,cpulabels,reassign_blank=False)
+        alignedlabels=alignbatch(cpuoutput,cpulabels,reassign_blank=True)
         writer.add_scalar('Train/Alignment', alignedlabels[1], count)
         alignedlabels=alignedlabels[0]
         alignedlabels=torch.from_numpy(alignedlabels).long().to(device) #reconvert it to a torch tensor

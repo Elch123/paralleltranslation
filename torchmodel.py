@@ -234,7 +234,6 @@ class AdvancedNet(nn.Module):
         AdvancedBlock(params),
         AdvancedBlock(params),
         AdvancedBlock(params),
-        AdvancedBlock(params),
         torch.nn.ReLU(),
         torch.nn.Conv1d(params['num_hidden'],params['symbols'], params['filter_width'],padding=params['filter_width']//2)]
         self.model = torch.nn.Sequential(*layers)
