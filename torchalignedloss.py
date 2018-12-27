@@ -14,7 +14,9 @@ import argparse
 import os
 (enprocessor,deprocessor)=makeendeprocessors.load()
 #hyperparameters
-indel_penalty=-.010
+indel_penalty=-.050
+ins_penalty=-.030
+del_penalty=-.250
 smoothing=.5
 blank_weight=0
 scoreavg=0
@@ -23,6 +25,7 @@ max_clamp=4.0
 lr=1e-2
 validlosses=[]
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+#device = "cpu"
 print(device)
 traindata=Batch_maker("traindeen.pickle")
 validdata=Batch_maker("traindeen.pickle")
@@ -86,16 +89,16 @@ def align(output,label,reassign_blank=False): # This uses the Needleman Wunsch o
     array=np.zeros(shape=(l_label,l_output)) # One larger than actual sequence to handle the edge cases of all inserition/all deletion.
     trace=np.zeros(shape=(l_label,l_output),dtype=np.int32) #Record path the algorithm is taking
     for i in range(l_label):
-        array[i,0]= i*indel_penalty
+        array[i,0]= i*ins_penalty
         trace[i,0]=1
     for i in range(l_output): #Fill out the edges
-        array[0,i]= i*indel_penalty
+        array[0,i]= i*del_penalty
         trace[0,i]=2
     trace[0,0]=0
     for i in range(1,l_label):
         for j in range(1,l_output):
-            inslabel=array[i-1,j]+indel_penalty
-            dellabel=array[i,j-1]+indel_penalty
+            inslabel=array[i-1,j]+ins_penalty
+            dellabel=array[i,j-1]+del_penalty
             usebonus=output[j-1,tracelabel[i-1]]
             #This is somewhat hackish, but the labels and output are offset by one in this array,
             #so I use output[j-1] and label[i-1] to get the correct indicies for the output and label sequence to fill the whole array.
@@ -120,7 +123,7 @@ def align(output,label,reassign_blank=False): # This uses the Needleman Wunsch o
             labelcopy[m]=label[k] #Use elif statements to only trigger one of the cases, not multiple ones before the path is updated.
         elif(trace[k,m]==1): #Insert label
             k-=1
-            inserts[m]=1 #This IS be what's causing the buffer overruns
+            inserts[m]=1
         elif(trace[k,m]==2): #Delete label
             m-=1
             deletes[m]=1
@@ -132,7 +135,7 @@ def alignbatch(outputs,labels,reassign_blank=False): # Run alignment algorithm o
     upsamplemult=1
     if(params['upsample']):
         upsamplemult=2
-    aligned=np.zeros(shape=(labels.shape[0],labels.shape[1]*upsamplemult))
+    aligned=np.zeros(shape=(labels.shape[0],labels.shape[1]*upsamplemult),dtype=np.int32)
     totalscore=0
     for i in range(len(aligned)):
         a=align(outputs[i],labels[i],reassign_blank)
@@ -144,6 +147,7 @@ def alignbatch(outputs,labels,reassign_blank=False): # Run alignment algorithm o
     pass
 def maketorchbatch(gen):
     batch=gen.makebatch(params['symbols_in_batch'])
+    print(batch.shape)
     return torch.from_numpy(batch).long()
 def tonumpy(tensor):
     return tensor.detach().cpu().numpy()
@@ -197,19 +201,30 @@ for e in range(params['epochs']):
 
     while(True):
         print(count)
-        batch=maketorchbatch(traindata).to(device)
+        batch=maketorchbatch(traindata)
+        #print(decode(enprocessor,batch[0][0]))
+        #print(decode(deprocessor,batch[1][0]))
+        s=batch[0].shape
+        batch=batch.to(device)
+        mask=np.random.random_sample((s[0],s[1]))>=.05
+        mask=torch.from_numpy(mask.astype(np.float32)).float().to(device)
+        mask=mask.unsqueeze(1)
         data=batch[1]
-        print(data.shape)
         labels=batch[0]
         output=net(data)
+        #print(output.shape)
+        #print(mask.shape)
+        output*=mask
         cpuoutput=tonumpy(softmax(output.permute(0,2,1)))#convert the tensor to have the channel dimantion last for the alignment stage
         #Take the softmax to constarin output between 0 and 1
         cpulabels=tonumpy(labels)
-        alignedlabels=alignbatch(cpuoutput,cpulabels,reassign_blank=True)
+        alignedlabels=alignbatch(cpuoutput,cpulabels)
+        print(decode(enprocessor,labels[0]))
+        print(decode(enprocessor,alignedlabels[0][0]))
         writer.add_scalar('Train/Alignment', alignedlabels[1], count)
         alignedlabels=alignedlabels[0]
         alignedlabels=torch.from_numpy(alignedlabels).long().to(device) #reconvert it to a torch tensor
-        #This conditional loss to constrin the number of generaed tokens is annoyingly complicated, but works. Perhaps find a simpler way?
+        #This conditional loss to constrin the number of generaed tokens is fairly complicated, but works. Perhaps find a simpler way?
         labelcount=torch.sum(torch.sign(labels),dim=1) #number of non zero output in label
         outcount=torch.sum(torch.sign(torch.argmax(output,dim=1)),dim=1) #number of non zero output in tensor
         diffcount=outcount-labelcount
@@ -222,11 +237,7 @@ for e in range(params['epochs']):
         lloss=l_loss_fn(outputnonzero,l_targets)*mse_scale
         #End conditional loss. Probably sould put in it's own function
         print("reg loss "+str(lloss.item()))
-        celoss=""
-        if(count<0):#Train some without aligning label at the start of training to help the model converge better. Deons't really work
-            celoss=ce_loss_fn(output,labels)
-        else:
-            celoss=ce_loss_fn(output,alignedlabels)
+        celoss=ce_loss_fn(output,alignedlabels)
         print("ce loss "+str(celoss.item())+"\n")
         loss=lloss+celoss
         writer.add_scalar('Train/Loss', loss.item(), count)
@@ -236,6 +247,6 @@ for e in range(params['epochs']):
             save(net,optimizer,count,loadpath)
         net.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm(net.parameters(), 1)
+        torch.nn.utils.clip_grad_norm_(net.parameters(), 10)
         optimizer.step()
         count+=1
