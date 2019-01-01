@@ -134,7 +134,7 @@ class PosEncoding(nn.Module):
                 pe[0,i+1,p]=math.cos(p / (10000 ** ((2 * i)/params['num_hidden'])))
         pe/=params['num_hidden']**1/2
         self.register_buffer('pe', pe)
-        self.pe=pe
+        self.pe=pe.cuda()
     def forward(self,x):
         shape=x.shape
         x+=self.pe[:,:,0:shape[2]]

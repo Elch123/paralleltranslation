@@ -28,7 +28,7 @@ max_clamp=4.0
 lr=1e-2
 validlosses=[]
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device = "cpu"
+#device = "cpu"
 print(device)
 traindata=Batch_maker("traindeen.pickle")
 validdata=Batch_maker("traindeen.pickle")
@@ -51,8 +51,7 @@ def save(model,optimizer,count,filename):
     torch.save({'count':count,'model_state_dict': model.state_dict(),'optimizer_state_dict': optimizer.state_dict()},filename)
 def alignment_score(label,tensor):
     if(label==0):
-        return -tensor[label]*indel_penalty #don't reward extra blank labels more than the indel indel_penalty, to cancel that out
-        #This will prevent the creation of many blamks
+        return 0
     return tensor[label]
 def nearest_insert_direction(index,inserts):
     #0 for left, 1 for right
