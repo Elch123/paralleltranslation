@@ -43,6 +43,6 @@ def makeslice(start,end,savefile):
     with open(savefile,'wb') as pairedtext:
         pickle.dump(text,pairedtext)
 makeslice(.96,1,"validationdeen.pickle")
-makeslice(0,.96,"traindeen.pickle")
+makeslice(0,.5,"traindeen.pickle")
 #print([enprocessor.DecodeIds(sentence) for sentence in enbpe[0:10]])
 #print([deprocessor.DecodeIds(sentence) for sentence in debpe[0:10]])

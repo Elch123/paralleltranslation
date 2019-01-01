@@ -18,18 +18,17 @@ import matplotlib.pyplot as plt
 (enprocessor,deprocessor)=makeendeprocessors.load()
 #hyperparameters
 indel_penalty=-.050
-ins_penalty=-.030
+ins_penalty=-.000
 del_penalty=-.400
 spread_penalty=-.030
 smoothing=.5
-blank_weight=0
 scoreavg=0
 mse_scale=0.5
 max_clamp=4.0
 lr=1e-2
 validlosses=[]
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#device = "cpu"
+device = "cpu"
 print(device)
 traindata=Batch_maker("traindeen.pickle")
 validdata=Batch_maker("traindeen.pickle")
@@ -197,11 +196,12 @@ a=align(genea,geneb)
 print(a)
 print(exiting)"""
 count=0
-net=AdvancedNet(params)#AttnResNet
+net=Transformer(params)#AttnResNet
 net.to(device)
-optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9,nesterov=True,weight_decay=params['weight_decay'])
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
+#optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9,nesterov=True,weight_decay=params['weight_decay'])
 mask=torch.ones((params['symbols'],))
-mask[0]=blank_weight
+mask[0]=0
 ce_loss_fn = torch.nn.CrossEntropyLoss(reduction='mean',weight=mask.to(device))#
 l_loss_fn = torch.nn.MSELoss(reduction='mean') #L1Loss
 softmax=torch.nn.Softmax(dim=2)

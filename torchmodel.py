@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import math
 
 class StandardBlock(nn.Module):
     def __init__(self,params):
@@ -30,11 +31,13 @@ class TransformerConv(nn.Module):
         self.conv2=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2)
         self.relu=torch.nn.ReLU()
     def forward(self,x):
+        add=x
         x=self.conv1(x)
         if(self.params['batchnorm']):
             x=self.bn2(x)
         x=self.relu(x)
         x=self.conv2(x)
+        x+=add
         return x
 class ResidualBlock(nn.Module):
     def __init__(self,params):
@@ -120,6 +123,22 @@ class PosEncodeLearned(nn.Module):
         encoding_slice=encoding[1,:,x.shape[2]]
         print(encoding_slice.shape)
         return encoding_slice+x
+class PosEncoding(nn.Module):
+    def __init__(self,params):
+        super().__init__()
+        self.hparams=params
+        pe = torch.zeros(1,params['num_hidden'],params['symbols_in_batch'])
+        for p in range(params['symbols_in_batch']):
+            for i in range(0, params['num_hidden'], 2):
+                pe[0,i,p]=math.sin(p / (10000 ** ((2 * i)/params['num_hidden'])))
+                pe[0,i+1,p]=math.cos(p / (10000 ** ((2 * i)/params['num_hidden'])))
+        pe/=params['num_hidden']**1/2
+        self.register_buffer('pe', pe)
+        self.pe=pe
+    def forward(self,x):
+        shape=x.shape
+        x+=self.pe[:,:,0:shape[2]]
+        return x
 class BasicAttention(nn.Module):
     def __init__(self,params):
         super().__init__()
@@ -186,6 +205,18 @@ class AdvancedBlock(nn.Module):
         super().__init__()
         self.attn=MultiHeadAttention(params)
         self.block=ResidualBlock(params)
+    def forward(self,x):
+        res=x
+        x=self.attn(x)
+        x+=res
+        x=self.block(x)
+        return x
+
+class TransformerBlock(nn.Module):
+    def __init__(self,params):
+        super().__init__()
+        self.attn=MultiHeadAttention(params)
+        self.block=TransformerConv(params)
     def forward(self,x):
         res=x
         x=self.attn(x)
@@ -265,11 +296,13 @@ class Transformer(nn.Module):
         params['filter_width']=1
         upsample=[]
         layers=[
-        AdvancedBlock(params),
-        AdvancedBlock(params),
-        AdvancedBlock(params),
-        AdvancedBlock(params),
-        AdvancedBlock(params),
+        PosEncoding(params),
+        TransformerBlock(params),
+        TransformerBlock(params),
+        TransformerBlock(params),
+        TransformerBlock(params),
+        TransformerBlock(params),
+        TransformerBlock(params),
         torch.nn.ReLU(),
         torch.nn.Conv1d(params['num_hidden'],params['symbols'], params['filter_width'],padding=params['filter_width']//2)]
         self.model = torch.nn.Sequential(*layers)
