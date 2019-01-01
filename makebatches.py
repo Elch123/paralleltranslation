@@ -25,7 +25,7 @@ class Batch_maker():
         numstrings=len(self.text[0])
         topi=np.random.randint(numstrings)
         #strlen=max(maxlen(self.text[0][topi],self.text[1][topi]),4)
-        strlen=int(len(self.text[0][topi])*1.5+6)
+        strlen=int(len(self.text[0][topi])*2+6)
         numback=max(maxsymbols//strlen,1)
         numback=numback+min(0,topi-numback)#clip number of elements going back if it is less than zero, to not overrun start of array.
         fronti=topi-numback

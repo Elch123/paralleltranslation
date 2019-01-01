@@ -120,12 +120,12 @@ def align(output,label,reassign_blank=False): # This uses the Needleman Wunsch o
             uselabel=array[i-1,j-1]+usebonus
             if(trace[i-1][j-1]==0):
                 uselabel+=spread_penalty
-            s=(uselabel,inslabel,dellabel)
+            s=(uselabel,dellabel,inslabel)
             array[i,j]=max(s)
             trace[i,j]=s.index(max(s)) #0 is keep, 1 in insert, 2 is delete
     #Read off the optimal alignment in reverse
     k=l_label-1
-    #plt.imshow(array)
+    #plt.imshow(trace)
     #plt.show()
     m=l_output-1
     path=[]
