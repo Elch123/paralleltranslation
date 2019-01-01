@@ -37,4 +37,6 @@ class Batch_maker():
             setb=self.text[1][fronti+i]
             maxtopb=min(len(setb),strlen)
             batch[1][i][0:maxtopb]=setb[0:maxtopb]
+            if(batch.shape[1]==0 or batch.shape[2]==0):
+                return self.makebatch(maxsymbols)
         return batch

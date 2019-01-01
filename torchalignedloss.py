@@ -5,7 +5,7 @@ import makeendeprocessors
 from makeendeprocessors import decode
 from makeendeprocessors import decodearray
 import torch
-from torchmodel import Cnn,ResNet,AttnResNet,AdvancedNet
+from torchmodel import Cnn,ResNet,AttnResNet,AdvancedNet,Transformer
 from makebatches import Batch_maker
 import json
 from tensorboardX import SummaryWriter
@@ -16,7 +16,8 @@ import os
 #hyperparameters
 indel_penalty=-.050
 ins_penalty=-.030
-del_penalty=-.250
+del_penalty=-.400
+spread_penalty=-.030
 smoothing=.5
 blank_weight=0
 scoreavg=0
@@ -103,6 +104,8 @@ def align(output,label,reassign_blank=False): # This uses the Needleman Wunsch o
             #This is somewhat hackish, but the labels and output are offset by one in this array,
             #so I use output[j-1] and label[i-1] to get the correct indicies for the output and label sequence to fill the whole array.
             uselabel=array[i-1,j-1]+usebonus
+            if(trace[i-1][j-1]==0):
+                uselabel+=spread_penalty
             s=(uselabel,inslabel,dellabel)
             array[i,j]=max(s)
             trace[i,j]=s.index(max(s)) #0 is keep, 1 in insert, 2 is delete

@@ -24,8 +24,8 @@ def loadtobpe(processor,filepath,start,end):
     return (lines,histogram)
 (enprocessor,deprocessor)=makeendeprocessors.load()
 def makeslice(start,end,savefile):
-    enbpe=loadtobpe(enprocessor,"ende/news-commentary-v11.de-en.en",start,end)
-    debpe=loadtobpe(deprocessor,"ende/news-commentary-v11.de-en.de",start,end)
+    enbpe=loadtobpe(enprocessor,"ende/text.en",start,end)
+    debpe=loadtobpe(deprocessor,"ende/text.de",start,end)
     enhist=enbpe[1]
     dehist=debpe[1]
     print(len(enbpe[0]))
@@ -42,7 +42,7 @@ def makeslice(start,end,savefile):
     text=(enbpe,debpe,enhist,dehist)
     with open(savefile,'wb') as pairedtext:
         pickle.dump(text,pairedtext)
-makeslice(.9,1,"validationdeen.pickle")
-makeslice(0,.9,"traindeen.pickle")
+makeslice(.96,1,"validationdeen.pickle")
+makeslice(0,.96,"traindeen.pickle")
 #print([enprocessor.DecodeIds(sentence) for sentence in enbpe[0:10]])
 #print([deprocessor.DecodeIds(sentence) for sentence in debpe[0:10]])

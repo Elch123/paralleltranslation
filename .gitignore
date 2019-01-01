@@ -6,4 +6,9 @@
 *.pt
 *.tar
 *.gz
+*.fr
+*.es
+*.pyc
+*.tgz
+*.zip
 *events.out.tfevents*

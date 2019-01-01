@@ -21,6 +21,21 @@ class StandardBlock(nn.Module):
         x=self.relu(x)
         x=self.conv2(x)
         return x
+class TransformerConv(nn.Module):
+    def __init__(self,params):
+        self.params=params
+        super().__init__()
+        self.conv1=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2)
+        self.bn1=torch.nn.BatchNorm1d(params['num_hidden'])
+        self.conv2=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2)
+        self.relu=torch.nn.ReLU()
+    def forward(self,x):
+        x=self.conv1(x)
+        if(self.params['batchnorm']):
+            x=self.bn2(x)
+        x=self.relu(x)
+        x=self.conv2(x)
+        return x
 class ResidualBlock(nn.Module):
     def __init__(self,params):
         self.params=params
@@ -229,6 +244,27 @@ class AdvancedNet(nn.Module):
         upsample=[]
         layers=[
         torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], params['filter_width'],padding=params['filter_width']//2),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
+        AdvancedBlock(params),
+        torch.nn.ReLU(),
+        torch.nn.Conv1d(params['num_hidden'],params['symbols'], params['filter_width'],padding=params['filter_width']//2)]
+        self.model = torch.nn.Sequential(*layers)
+    def forward(self,x):
+        embedded=self.embed(x)
+        embedded=embedded.permute(0,2,1)
+        out=self.model(embedded)
+        return out
+
+class Transformer(nn.Module):
+    def __init__(self,params):
+        super().__init__()
+        self.embed=torch.nn.Embedding(params['symbols'],params['num_hidden'])
+        params['filter_width']=1
+        upsample=[]
+        layers=[
         AdvancedBlock(params),
         AdvancedBlock(params),
         AdvancedBlock(params),
