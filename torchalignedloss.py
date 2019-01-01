@@ -12,6 +12,9 @@ from tensorboardX import SummaryWriter
 from hparams import params
 import argparse
 import os
+import sys
+import select
+import matplotlib.pyplot as plt
 (enprocessor,deprocessor)=makeendeprocessors.load()
 #hyperparameters
 indel_penalty=-.050
@@ -35,6 +38,14 @@ parser.add_argument('savename',help="the name of the savefile, which will be sto
 args=parser.parse_args()
 print(args.savename)
 writer = SummaryWriter('saves/torchalignedloss_'+args.savename)
+def heard_c_then_enter():
+    i,o,e = select.select([sys.stdin],[],[],0.0001)
+    for s in i:
+        if s == sys.stdin:
+            text = sys.stdin.readline()
+            if 'c' in text:
+                return True
+    return False
 def filepath(name):
     return "saves/"+name+".tar"
 def save(model,optimizer,count,filename):
@@ -81,25 +92,29 @@ def reassign(label,inserts,deletes):
             if(direction==1):
                 label[i]=label[i+1]"""
     return label
-
+def unzeropad(array):
+    l=len(array)-1
+    while(array[l]==0 and l>1):
+        l-=1
+    return array[0:l+1]
 def align(output,label,reassign_blank=False): # This uses the Needleman Wunsch optimal alignment algrithm to align the outputs of the model with the labels
+    label=unzeropad(label)
     l_label=len(label)+1
     l_output=len(output)+1
-    #label=np.pad(label,(0,len(output)-len(label)),'constant',constant_values=(0,0))
     tracelabel=label
     array=np.zeros(shape=(l_label,l_output)) # One larger than actual sequence to handle the edge cases of all inserition/all deletion.
     trace=np.zeros(shape=(l_label,l_output),dtype=np.int32) #Record path the algorithm is taking
     for i in range(l_label):
-        array[i,0]= i*ins_penalty
+        array[i,0]= i*del_penalty
         trace[i,0]=1
     for i in range(l_output): #Fill out the edges
-        array[0,i]= i*del_penalty
+        array[0,i]= i*ins_penalty
         trace[0,i]=2
     trace[0,0]=0
     for i in range(1,l_label):
         for j in range(1,l_output):
-            inslabel=array[i-1,j]+ins_penalty
-            dellabel=array[i,j-1]+del_penalty
+            dellabel=array[i-1,j]+del_penalty
+            inslabel=array[i,j-1]+ins_penalty
             usebonus=output[j-1,tracelabel[i-1]]
             #This is somewhat hackish, but the labels and output are offset by one in this array,
             #so I use output[j-1] and label[i-1] to get the correct indicies for the output and label sequence to fill the whole array.
@@ -111,8 +126,9 @@ def align(output,label,reassign_blank=False): # This uses the Needleman Wunsch o
             trace[i,j]=s.index(max(s)) #0 is keep, 1 in insert, 2 is delete
     #Read off the optimal alignment in reverse
     k=l_label-1
+    #plt.imshow(array)
+    #plt.show()
     m=l_output-1
-    #print("k "+str(k)+" m "+str(m))
     path=[]
     labelcopy=np.zeros(shape=(len(output)))
     inserts=np.zeros(shape=(len(output)+1))
@@ -209,7 +225,7 @@ for e in range(params['epochs']):
         #print(decode(deprocessor,batch[1][0]))
         s=batch[0].shape
         batch=batch.to(device)
-        mask=np.random.random_sample((s[0],s[1]))>=.05
+        mask=np.random.random_sample((s[0],s[1]))>=.03
         mask=torch.from_numpy(mask.astype(np.float32)).float().to(device)
         mask=mask.unsqueeze(1)
         data=batch[1]
@@ -253,3 +269,11 @@ for e in range(params['epochs']):
         torch.nn.utils.clip_grad_norm_(net.parameters(), 10)
         optimizer.step()
         count+=1
+        if(heard_c_then_enter()):
+            break
+    break
+torch.cuda.synchronize()
+del net
+torch.cuda.synchronize()
+torch.cuda.empty_cache()
+torch.cuda.synchronize()

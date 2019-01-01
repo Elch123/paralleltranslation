@@ -6,9 +6,13 @@
 *.pt
 *.tar
 *.gz
+<<<<<<< HEAD
 *.fr
 *.es
 *.pyc
 *.tgz
 *.zip
+=======
+*.tgz
+>>>>>>> 63d42b1f119e033a11339d970ed4db31a1b14a73
 *events.out.tfevents*
