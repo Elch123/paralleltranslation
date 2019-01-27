@@ -19,11 +19,11 @@ import matplotlib.pyplot as plt
 #hyperparameters
 indel_penalty=-.050
 ins_penalty=-.000
-del_penalty=-.400
-spread_penalty=-.030
+del_penalty=-.200
+spread_penalty=-.010
 smoothing=.5
 scoreavg=0
-mse_scale=0.5
+mse_scale=0.20
 max_clamp=4.0
 lr=1e-2
 validlosses=[]
@@ -224,7 +224,7 @@ for e in range(params['epochs']):
         #print(decode(deprocessor,batch[1][0]))
         s=batch[0].shape
         batch=batch.to(device)
-        mask=np.random.random_sample((s[0],s[1]))>=.03
+        mask=np.random.random_sample((s[0],s[1]))>=params['dropend']
         mask=torch.from_numpy(mask.astype(np.float32)).float().to(device)
         mask=mask.unsqueeze(1)
         data=batch[1]

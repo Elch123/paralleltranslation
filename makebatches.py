@@ -1,9 +1,7 @@
 import sentencepiece as spm
 import numpy as np
 import pickle
-import makeendeprocessors
-from makeendeprocessors import decode
-from makeendeprocessors import decodearray
+from loader import makeendeprocessors
 (enprocessor,deprocessor)=makeendeprocessors.load()
 
 def maxlen(langa,langb):

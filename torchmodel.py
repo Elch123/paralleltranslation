@@ -34,7 +34,7 @@ class TransformerConv(nn.Module):
         add=x
         x=self.conv1(x)
         if(self.params['batchnorm']):
-            x=self.bn2(x)
+            x=self.bn1(x)
         x=self.relu(x)
         x=self.conv2(x)
         x+=add
@@ -167,6 +167,7 @@ class MultiHeadAttention(nn.Module):
         self.keyconv=torch.nn.Conv1d(params['num_hidden'],params['attnsize'], 1)
         self.queriesconv=torch.nn.Conv1d(params['num_hidden'],params['attnsize'], 1)
         self.softmax=torch.nn.Softmax(dim=-1)
+        self.bn1=torch.nn.BatchNorm1d(params['num_hidden'])
         self.projecta=torch.nn.Conv1d(params['num_hidden'],params['num_hidden'], 1)
     def split(self,x,shape):
         x=torch.reshape(x,(shape[0]*self.hparams['heads'],-1,shape[2]))
@@ -186,6 +187,8 @@ class MultiHeadAttention(nn.Module):
         x=self.split(x,shape)
         out=torch.matmul(x,attn)
         out=self.join(out,shape)
+        if(self.hparams['batchnorm']):
+            out=self.bn1(out)
         out=self.projecta(out)
         return out
 class AttnResBlock(nn.Module):
